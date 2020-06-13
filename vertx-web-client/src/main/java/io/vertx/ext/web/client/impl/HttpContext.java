@@ -50,7 +50,9 @@ public class HttpContext<T> {
   private Object body;
   private String contentType;
   private Map<String, Object> attrs;
-  private Iterator<Handler<HttpContext<?>>> it;
+  private int interceptorIdx;
+  private boolean invoking;
+  private boolean invokeNext;
   private ClientPhase phase;
   private HttpClientRequest clientRequest;
   private HttpClientResponse clientResponse;
@@ -261,18 +263,30 @@ public class HttpContext<T> {
    * Call the next interceptor in the chain.
    */
   public void next() {
-    if (it.hasNext()) {
-      Handler<HttpContext<?>> next = it.next();
-      next.handle(this);
+    if (invoking) {
+      invokeNext = true;
     } else {
-      it = null;
+      while (interceptorIdx < interceptors.size()) {
+        Handler<HttpContext<?>> interceptor = interceptors.get(interceptorIdx);
+        invoking = true;
+        interceptorIdx++;
+        try {
+          interceptor.handle(this);
+        } finally {
+          invoking = false;
+        }
+        if (!invokeNext) {
+          return;
+        }
+        invokeNext = false;
+      }
+      interceptorIdx = 0;
       execute();
     }
   }
 
   private void fire(ClientPhase phase) {
     this.phase = phase;
-    this.it = interceptors.iterator();
     next();
   }
 
