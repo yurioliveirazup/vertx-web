@@ -18,7 +18,6 @@ package io.vertx.ext.web.handler.impl;
 import io.vertx.core.Vertx;
 import io.vertx.core.http.Cookie;
 import io.vertx.core.http.CookieSameSite;
-import io.vertx.core.http.HttpHeaders;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.impl.logging.Logger;
 import io.vertx.core.impl.logging.LoggerFactory;
@@ -39,12 +38,15 @@ import java.util.Base64;
 /**
  * @author <a href="mailto:pmlopes@gmail.com">Paulo Lopes</a>
  */
+// 48 - total
+// 43 - Remove validacao da Origem
 public class CSRFHandlerImpl implements CSRFHandler {
 
   private static final Logger log = LoggerFactory.getLogger(CSRFHandlerImpl.class);
 
   private static final Base64.Encoder BASE64 = Base64.getMimeEncoder();
 
+  // 1
   private final VertxContextPRNG random;
   private final Mac mac;
 
@@ -57,6 +59,7 @@ public class CSRFHandlerImpl implements CSRFHandler {
   private URI origin;
   private boolean httpOnly;
 
+  // 2
   public CSRFHandlerImpl(final Vertx vertx, final String secret) {
     try {
       random = VertxContextPRNG.current(vertx);
@@ -68,6 +71,7 @@ public class CSRFHandlerImpl implements CSRFHandler {
   }
 
   @Override
+  //2
   public CSRFHandler setOrigin(String origin) {
     try {
       this.origin = new URI(origin);
@@ -113,6 +117,7 @@ public class CSRFHandlerImpl implements CSRFHandler {
     return this;
   }
 
+  // 2
   private String generateAndStoreToken(RoutingContext ctx) {
     byte[] salt = new byte[32];
     random.nextBytes(salt);
@@ -132,6 +137,7 @@ public class CSRFHandlerImpl implements CSRFHandler {
     return token;
   }
 
+  //1
   private String getTokenFromSession(RoutingContext ctx) {
     Session session = ctx.session();
     if (session == null) {
@@ -156,10 +162,12 @@ public class CSRFHandlerImpl implements CSRFHandler {
    * @param s Source string
    * @return TRUE if source string is null or empty (including containing only spaces)
    */
+  //2
   private static boolean isBlank(String s) {
     return s == null || s.trim().isEmpty();
   }
 
+  // 3
   private static long parseLong(String s) {
     if (isBlank(s)) {
       return -1;
@@ -174,41 +182,14 @@ public class CSRFHandlerImpl implements CSRFHandler {
     }
   }
 
+  // 1
   private boolean isValidOrigin(RoutingContext  ctx) {
     /* Verifying Same Origin with Standard Headers */
-    if (origin != null) {
-      //Try to get the source from the "Origin" header
-      String source = ctx.request().getHeader(HttpHeaders.ORIGIN);
-      if (isBlank(source)) {
-        //If empty then fallback on "Referer" header
-        source = ctx.request().getHeader(HttpHeaders.REFERER);
-        //If this one is empty too then we trace the event and we block the request (recommendation of the article)...
-        if (isBlank(source)) {
-          log.trace("ORIGIN and REFERER request headers are both absent/empty");
-          return false;
-        }
-      }
 
-      //Compare the source against the expected target origin
-      try {
-        URI sourceURL = new URI(source);
-        if (
-          !origin.getScheme().equals(sourceURL.getScheme()) ||
-            !origin.getHost().equals(sourceURL.getHost()) ||
-            origin.getPort() != sourceURL.getPort()) {
-          //One the part do not match so we trace the event and we block the request
-          log.trace("Protocol/Host/Port do not fully match");
-          return false;
-        }
-      } catch (URISyntaxException e) {
-        log.trace("Invalid URI", e);
-        return false;
-      }
-    }
-    // no configured origin or origin is valid
-    return true;
+    return new OriginValidator(origin).validate(ctx);
   }
 
+  // 13
   private boolean isValidRequest(RoutingContext ctx) {
 
     /* Verifying CSRF token using "Double Submit Cookie" approach */
@@ -291,6 +272,7 @@ public class CSRFHandlerImpl implements CSRFHandler {
   }
 
   @Override
+  // 15
   public void handle(RoutingContext ctx) {
 
     if (nagHttps) {
