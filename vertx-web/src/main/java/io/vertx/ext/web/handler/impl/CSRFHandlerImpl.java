@@ -186,7 +186,7 @@ public class CSRFHandlerImpl implements CSRFHandler {
   private boolean isValidOrigin(RoutingContext  ctx) {
     /* Verifying Same Origin with Standard Headers */
 
-    return new OriginValidator(origin).validate(ctx);
+    return new OriginValidator(origin).validateOriginBy(ctx);
   }
 
   // 13

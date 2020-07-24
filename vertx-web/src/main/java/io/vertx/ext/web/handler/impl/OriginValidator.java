@@ -21,7 +21,7 @@ class OriginValidator {
     this.origin = origin;
   }
 
-  public boolean validate(RoutingContext ctx) {
+  public boolean validateOriginBy(RoutingContext ctx) {
 
     if(isNull(origin)) {
       return true;
