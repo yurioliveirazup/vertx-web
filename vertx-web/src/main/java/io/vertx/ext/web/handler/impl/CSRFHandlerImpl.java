@@ -53,7 +53,6 @@ public class CSRFHandlerImpl implements CSRFHandler {
 
   private URI origin;
 
-  // 2
   public CSRFHandlerImpl(final Vertx vertx, final String secret) {
     try {
       mac = Mac.getInstance("HmacSHA256");
@@ -66,7 +65,6 @@ public class CSRFHandlerImpl implements CSRFHandler {
   }
 
   @Override
-  //2
   public CSRFHandler setOrigin(String origin) {
     try {
       this.origin = new URI(origin);
@@ -123,7 +121,6 @@ public class CSRFHandlerImpl implements CSRFHandler {
     return s == null || s.trim().isEmpty();
   }
 
-  // 3
   private static long parseLong(String s) {
     if (isBlank(s)) {
       return -1;
@@ -226,7 +223,6 @@ public class CSRFHandlerImpl implements CSRFHandler {
   }
 
   @Override
-  // 15
   public void handle(RoutingContext ctx) {
 
     if (nagHttps) {
