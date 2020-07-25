@@ -16,8 +16,6 @@
 package io.vertx.ext.web.handler.impl;
 
 import io.vertx.core.Vertx;
-import io.vertx.core.impl.logging.Logger;
-import io.vertx.core.impl.logging.LoggerFactory;
 import io.vertx.ext.auth.VertxContextPRNG;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.CSRFHandler;
@@ -33,23 +31,18 @@ import java.security.NoSuchAlgorithmException;
  */
 public class CSRFHandlerImpl implements CSRFHandler {
 
-  private static final Logger log = LoggerFactory.getLogger(CSRFHandlerImpl.class);
-
   private final TokenHelper tokenHelper;
   private final HttpRequestHandler requestHandler;
-
-  private boolean nagHttps;
-  private String cookieName = DEFAULT_COOKIE_NAME;
-  private String headerName = DEFAULT_HEADER_NAME;
-  private long timeout = SessionHandler.DEFAULT_SESSION_TIMEOUT;
+  private final RequestConfig requestConfig;
 
   public CSRFHandlerImpl(final Vertx vertx, final String secret) {
     try {
       Mac mac = Mac.getInstance("HmacSHA256");
       mac.init(new SecretKeySpec(secret.getBytes(), "HmacSHA256"));
       VertxContextPRNG random = VertxContextPRNG.current(vertx);
-      tokenHelper = new TokenHelper(DEFAULT_COOKIE_PATH, random, mac, cookieName, headerName);
-      requestHandler = new HttpRequestHandler(tokenHelper, timeout, mac, cookieName, headerName);
+      this.requestConfig = new RequestConfig(DEFAULT_COOKIE_NAME, DEFAULT_HEADER_NAME);
+      tokenHelper = new TokenHelper(DEFAULT_COOKIE_PATH, random, mac, requestConfig);
+      requestHandler = new HttpRequestHandler(tokenHelper, SessionHandler.DEFAULT_SESSION_TIMEOUT, mac, requestConfig);
     } catch (NoSuchAlgorithmException | InvalidKeyException e) {
       throw new RuntimeException(e);
     }
@@ -63,7 +56,7 @@ public class CSRFHandlerImpl implements CSRFHandler {
 
   @Override
   public CSRFHandler setCookieName(String cookieName) {
-    this.cookieName = cookieName;
+    this.requestConfig.setCookieName(cookieName);
     return this;
   }
 
@@ -81,13 +74,13 @@ public class CSRFHandlerImpl implements CSRFHandler {
 
   @Override
   public CSRFHandler setHeaderName(String headerName) {
-    this.headerName = headerName;
+    this.requestConfig.setHeaderName(headerName);
     return this;
   }
 
   @Override
   public CSRFHandler setTimeout(long timeout) {
-    this.timeout = timeout;
+    requestHandler.setTimeout(timeout);
     return this;
   }
 
@@ -100,6 +93,6 @@ public class CSRFHandlerImpl implements CSRFHandler {
 
   @Override
   public void handle(RoutingContext ctx) {
-    requestHandler.handle(ctx);
+    requestHandler.handleRequestTo(ctx);
   }
 }

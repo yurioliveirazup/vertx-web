@@ -21,16 +21,14 @@ class TokenHelper {
   private String cookiePath;
   private VertxContextPRNG random;
   private Mac mac;
-  private String cookieName;
-  private String headerName;
+  private RequestConfig requestConfig;
   private boolean httpOnly;
 
-  public TokenHelper(String defaultCookiePath, VertxContextPRNG random, Mac mac, String cookieName, String headerName) {
+  public TokenHelper(String defaultCookiePath, VertxContextPRNG random, Mac mac, RequestConfig requestConfig) {
     this.cookiePath = defaultCookiePath;
     this.random = random;
     this.mac = mac;
-    this.cookieName = cookieName;
-    this.headerName = headerName;
+    this.requestConfig = requestConfig;
   }
 
   public String generateAndStoreToken(RoutingContext ctx) {
@@ -43,7 +41,7 @@ class TokenHelper {
     final String token = saltPlusToken + "." + signature;
     // a new token was generated add it to the cookie
     ctx.addCookie(
-      Cookie.cookie(cookieName, token)
+      Cookie.cookie(requestConfig.getCookieName(), token)
         .setPath(cookiePath)
         .setHttpOnly(httpOnly)
         // it's not an option to change the same site policy
@@ -59,7 +57,7 @@ class TokenHelper {
       return null;
     }
     // get the token from the session
-    String sessionToken = session.get(headerName);
+    String sessionToken = session.get(requestConfig.getHeaderName());
     if (sessionToken != null) {
       // attempt to parse the value
       int idx = sessionToken.indexOf('/');

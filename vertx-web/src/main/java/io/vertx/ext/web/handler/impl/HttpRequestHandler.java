@@ -21,20 +21,18 @@ class HttpRequestHandler {
   private TokenHelper tokenHelper;
   private long timeout;
   private Mac mac;
-  private String cookieName;
-  private String headerName;
+  private RequestConfig requestConfig;
   private URI origin;
   private boolean nagHttps;
 
-  public HttpRequestHandler(TokenHelper tokenHelper, long timeout, Mac mac, String cookieName, String headerName) {
+  public HttpRequestHandler(TokenHelper tokenHelper, long timeout, Mac mac, RequestConfig requestConfig) {
     this.tokenHelper = tokenHelper;
     this.timeout = timeout;
     this.mac = mac;
-    this.cookieName = cookieName;
-    this.headerName = headerName;
+    this.requestConfig = requestConfig;
   }
 
-  public void handle(RoutingContext ctx) {
+  public void handleRequestTo(RoutingContext ctx) {
     if (nagHttps) {
       String uri = ctx.request().absoluteURI();
       if (uri != null && !uri.startsWith("https:")) {
@@ -70,7 +68,7 @@ class HttpRequestHandler {
             token = tokenHelper.generateAndStoreToken(ctx);
             // storing will include the session id too. The reason is that if a session is upgraded
             // we don't want to allow the token to be valid anymore
-            session.put(headerName, session.id() + "/" + token);
+            session.put(requestConfig.getHeaderName(), session.id() + "/" + token);
           } else {
             String[] parts = sessionToken.split("\\.");
             final long ts = tokenHelper.parseTokenToLong(parts[1]);
@@ -93,7 +91,7 @@ class HttpRequestHandler {
           }
         }
         // put the token in the context for users who prefer to render the token directly on the HTML
-        ctx.put(headerName, token);
+        ctx.put(requestConfig.getHeaderName(), token);
         ctx.next();
         break;
       case "POST":
@@ -105,7 +103,7 @@ class HttpRequestHandler {
           token = tokenHelper.generateAndStoreToken(ctx);
           // put the token in the context for users who prefer to
           // render the token directly on the HTML
-          ctx.put(headerName, token);
+          ctx.put(requestConfig.getHeaderName(), token);
           ctx.next();
         } else {
           ctx.fail(403);
@@ -127,12 +125,12 @@ class HttpRequestHandler {
   private boolean isValidRequest(RoutingContext ctx) {
 
     /* Verifying CSRF token using "Double Submit Cookie" approach */
-    final Cookie cookie = ctx.getCookie(cookieName);
+    final Cookie cookie = ctx.getCookie(requestConfig.getCookieName());
 
-    String header = ctx.request().getHeader(headerName);
+    String header = ctx.request().getHeader(requestConfig.getHeaderName());
     if (header == null) {
       // fallback to form attributes
-      header = ctx.request().getFormAttribute(headerName);
+      header = ctx.request().getFormAttribute(requestConfig.getHeaderName());
     }
 
     // both the header and the cookie must be present, not null and not empty
@@ -151,7 +149,7 @@ class HttpRequestHandler {
       Session session = ctx.session();
 
       // get the token from the session
-      String sessionToken = session.get(headerName);
+      String sessionToken = session.get(requestConfig.getHeaderName());
       if (sessionToken != null) {
         // attempt to parse the value
         int idx = sessionToken.indexOf('/');
@@ -192,7 +190,7 @@ class HttpRequestHandler {
 
     // this token has been used and we discard it to avoid replay attacks
     if (ctx.session() != null) {
-      ctx.session().remove(headerName);
+      ctx.session().remove(requestConfig.getHeaderName());
     }
 
     final long ts = tokenHelper.parseTokenToLong(tokens[1]);
@@ -215,5 +213,9 @@ class HttpRequestHandler {
 
   public void setNagHttps(boolean nag) {
     this.nagHttps = nag;
+  }
+
+  public void setTimeout(long timeout) {
+    this.timeout = timeout;
   }
 }
