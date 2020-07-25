@@ -17,7 +17,6 @@ package io.vertx.ext.web.handler.impl;
 
 import io.vertx.core.Vertx;
 import io.vertx.core.http.Cookie;
-import io.vertx.core.http.CookieSameSite;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.impl.logging.Logger;
 import io.vertx.core.impl.logging.LoggerFactory;
@@ -38,33 +37,29 @@ import java.util.Base64;
 /**
  * @author <a href="mailto:pmlopes@gmail.com">Paulo Lopes</a>
  */
-// 48 - total
-// 43 - Remove validacao da Origem
 public class CSRFHandlerImpl implements CSRFHandler {
 
   private static final Logger log = LoggerFactory.getLogger(CSRFHandlerImpl.class);
 
   private static final Base64.Encoder BASE64 = Base64.getMimeEncoder();
 
-  // 1
-  private final VertxContextPRNG random;
   private final Mac mac;
+  private final TokenHelper tokenHelper;
 
   private boolean nagHttps;
   private String cookieName = DEFAULT_COOKIE_NAME;
-  private String cookiePath = DEFAULT_COOKIE_PATH;
   private String headerName = DEFAULT_HEADER_NAME;
   private long timeout = SessionHandler.DEFAULT_SESSION_TIMEOUT;
 
   private URI origin;
-  private boolean httpOnly;
 
   // 2
   public CSRFHandlerImpl(final Vertx vertx, final String secret) {
     try {
-      random = VertxContextPRNG.current(vertx);
       mac = Mac.getInstance("HmacSHA256");
       mac.init(new SecretKeySpec(secret.getBytes(), "HmacSHA256"));
+      VertxContextPRNG random = VertxContextPRNG.current(vertx);
+      tokenHelper = new TokenHelper(DEFAULT_COOKIE_PATH, random, mac, cookieName, headerName);
     } catch (NoSuchAlgorithmException | InvalidKeyException e) {
       throw new RuntimeException(e);
     }
@@ -89,13 +84,13 @@ public class CSRFHandlerImpl implements CSRFHandler {
 
   @Override
   public CSRFHandler setCookiePath(String cookiePath) {
-    this.cookiePath = cookiePath;
+    tokenHelper.setCookiePath(cookiePath);
     return this;
   }
 
   @Override
   public CSRFHandler setCookieHttpOnly(boolean httpOnly) {
-    this.httpOnly = httpOnly;
+    tokenHelper.setCookieHttpOnly(httpOnly);
     return this;
   }
 
@@ -117,44 +112,6 @@ public class CSRFHandlerImpl implements CSRFHandler {
     return this;
   }
 
-  // 2
-  private String generateAndStoreToken(RoutingContext ctx) {
-    byte[] salt = new byte[32];
-    random.nextBytes(salt);
-
-    String saltPlusToken = BASE64.encodeToString(salt) + "." + System.currentTimeMillis();
-    String signature = BASE64.encodeToString(mac.doFinal(saltPlusToken.getBytes()));
-
-    final String token = saltPlusToken + "." + signature;
-    // a new token was generated add it to the cookie
-    ctx.addCookie(
-      Cookie.cookie(cookieName, token)
-        .setPath(cookiePath)
-        .setHttpOnly(httpOnly)
-        // it's not an option to change the same site policy
-        .setSameSite(CookieSameSite.STRICT));
-
-    return token;
-  }
-
-  //1
-  private String getTokenFromSession(RoutingContext ctx) {
-    Session session = ctx.session();
-    if (session == null) {
-      return null;
-    }
-    // get the token from the session
-    String sessionToken = session.get(headerName);
-    if (sessionToken != null) {
-      // attempt to parse the value
-      int idx = sessionToken.indexOf('/');
-      if (idx != -1 && session.id() != null && session.id().equals(sessionToken.substring(0, idx))) {
-        return sessionToken.substring(idx + 1);
-      }
-    }
-    // fail
-    return null;
-  }
 
   /**
    * Check if a string is null or empty (including containing only spaces)
@@ -162,7 +119,6 @@ public class CSRFHandlerImpl implements CSRFHandler {
    * @param s Source string
    * @return TRUE if source string is null or empty (including containing only spaces)
    */
-  //2
   private static boolean isBlank(String s) {
     return s == null || s.trim().isEmpty();
   }
@@ -182,14 +138,12 @@ public class CSRFHandlerImpl implements CSRFHandler {
     }
   }
 
-  // 1
   private boolean isValidOrigin(RoutingContext  ctx) {
     /* Verifying Same Origin with Standard Headers */
 
     return new OriginValidator(origin).validateOriginBy(ctx);
   }
 
-  // 13
   private boolean isValidRequest(RoutingContext ctx) {
 
     /* Verifying CSRF token using "Double Submit Cookie" approach */
@@ -298,16 +252,16 @@ public class CSRFHandlerImpl implements CSRFHandler {
 
         if (session == null) {
           // if there's no session to store values, tokens are issued on every request
-          token = generateAndStoreToken(ctx);
+          token = tokenHelper.generateAndStoreToken(ctx);
         } else {
           // get the token from the session, this also considers the fact
           // that the token might be invalid as it was issued for a previous session id
           // session id's change on session upgrades (unauthenticated -> authenticated; role change; etc...)
-          String sessionToken = getTokenFromSession(ctx);
+          String sessionToken = tokenHelper.getTokenFromSession(ctx);
           // when there's no token in the session, then we behave just like when there is no session
           // create a new token, but we also store it in the session for the next runs
           if (sessionToken == null) {
-            token = generateAndStoreToken(ctx);
+            token = tokenHelper.generateAndStoreToken(ctx);
             // storing will include the session id too. The reason is that if a session is upgraded
             // we don't want to allow the token to be valid anymore
             session.put(headerName, session.id() + "/" + token);
@@ -317,7 +271,7 @@ public class CSRFHandlerImpl implements CSRFHandler {
 
             if (ts == -1) {
               // fallback as the token is expired
-              token = generateAndStoreToken(ctx);
+              token = tokenHelper.generateAndStoreToken(ctx);
             } else {
               if (!(System.currentTimeMillis() > ts + timeout)) {
                 // we're still on the same session, no need to regenerate the token
@@ -327,7 +281,7 @@ public class CSRFHandlerImpl implements CSRFHandler {
                 // the user agent still has it from the previous interaction.
               } else {
                 // fallback as the token is expired
-                token = generateAndStoreToken(ctx);
+                token = tokenHelper.generateAndStoreToken(ctx);
               }
             }
           }
@@ -342,7 +296,7 @@ public class CSRFHandlerImpl implements CSRFHandler {
       case "PATCH":
         if (isValidRequest(ctx)) {
           // it matches, so refresh the token to avoid replay attacks
-          token = generateAndStoreToken(ctx);
+          token = tokenHelper.generateAndStoreToken(ctx);
           // put the token in the context for users who prefer to
           // render the token directly on the HTML
           ctx.put(headerName, token);
